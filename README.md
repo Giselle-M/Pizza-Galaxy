@@ -19,3 +19,9 @@ main
     Ramas de trabajo desde develop: 
     feature/documentación
     feature/recursos
+
+Experiencia y aprendizajes del uso de GitKraken
+Al utilizar GitKraken nos pudimos dar cuenta de la importancia de mantener un orden y organización en el desarrollo de un proyecto,
+sobre todo si se trata de trabajar en conjunto con otros colaboradores. GitKraken facilita mucho esta tarea ya que tiene una interfaz
+intuitiva que nos permite agilizar las actividades relacionadas a versionamiento y colaboración, podemos analizar visualmente la estructura
+que lleva nuestro proyecto y movernos entre ramas con mayor facilidad de lo que lo hemos hecho a través de comandos.
