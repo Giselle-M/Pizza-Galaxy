@@ -1,0 +1,361 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Pizza Galaxy — Simulación (Demo)</title>
+  <style>
+    :root{--bg:#060818;--ui:#e6e6e6}
+    html,body{height:100%;margin:0;font-family:Inter,Segoe UI,Roboto,Arial,sans-serif;background:var(--bg);color:var(--ui)}
+    .wrap{display:flex;flex-direction:column;height:100%;gap:10px;padding:12px}
+    header{display:flex;justify-content:space-between;align-items:center}
+    header h1{font-size:18px;margin:0}
+    #gameArea{flex:1;display:flex;gap:12px}
+    canvas{background:linear-gradient(180deg,#07102a, #00111a);border-radius:8px;box-shadow:0 6px 20px rgba(0,0,0,0.6)}
+    #ui{width:260px;min-width:220px}
+    .card{background:rgba(255,255,255,0.04);padding:12px;border-radius:8px}
+    .stat{display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px dashed rgba(255,255,255,0.03)}
+    .controls{font-size:13px;line-height:1.4}
+    button{background:#1f6feb;color:white;border:0;padding:8px 10px;border-radius:6px;cursor:pointer}
+    .small{font-size:13px;color:#cbd5e1}
+    footer{font-size:13px;color:#9aa7b2}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <h1>Pizza Galaxy — Simulación (repositorio: Pizza-Galaxy)</h1>
+      <div class="small">Versión demo — objetivo: entregar pizzas antes de que se enfríen</div>
+    </header>
+
+    <div id="gameArea">
+      <canvas id="game" width="960" height="560"></canvas>
+
+      <div id="ui">
+        <div class="card">
+          <div class="stat"><strong>Puntuación</strong><div id="score">0</div></div>
+          <div class="stat"><strong>Tiempo</strong><div id="time">60</div></div>
+          <div class="stat"><strong>Entregas</strong><div id="delivered">0 / 3</div></div>
+          <div class="stat"><strong>Nivel (Planeta)</strong><div id="level">1 - Nebulón</div></div>
+          <div style="padding-top:8px">
+            <div class="small">Mejoras (simples)</div>
+            <div style="display:flex;gap:6px;padding-top:8px">
+              <button id="buyFuel">+ Combustible (10 pts)</button>
+              <button id="buyShield">+ Escudo (20 pts)</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="card" style="margin-top:12px">
+          <div class="small controls">
+            <strong>Controles</strong>
+            <ul>
+              <li>Flechas o WASD: mover</li>
+              <li>Espacio: entrega (cuando estés sobre la zona)</li>
+              <li>P: pausar</li>
+              <li>R: reiniciar nivel</li>
+            </ul>
+          </div>
+        </div>
+
+        <div class="card" style="margin-top:12px">
+          <div class="small">Objetivo: completar las entregas del planeta antes de que el tiempo llegue a 0. Cada planeta tiene <em>gravedad</em> distinta y obstáculos únicos.</div>
+        </div>
+
+      </div>
+    </div>
+
+    <footer class="small">Abre este archivo en tu navegador. Código comentado para usar en el repositorio y practicar commits.</footer>
+  </div>
+
+  <script>
+  // Pizza Galaxy - Simulación simple en canvas
+  // Autor: Demo educativo para aprender flujo de trabajo y versionamiento
+
+  const canvas = document.getElementById('game');
+  const ctx = canvas.getContext('2d');
+  const scoreEl = document.getElementById('score');
+  const timeEl = document.getElementById('time');
+  const deliveredEl = document.getElementById('delivered');
+  const levelEl = document.getElementById('level');
+  const buyFuelBtn = document.getElementById('buyFuel');
+  const buyShieldBtn = document.getElementById('buyShield');
+
+  let W = canvas.width, H = canvas.height;
+
+  // Game state
+  const state = {
+    running: true,
+    paused: false,
+    score: 0,
+    time: 60,
+    levelIndex: 0,
+    delivered: 0,
+    shield: 0,
+    fuel: 100
+  };
+
+  // Planetas (niveles) — cada uno tiene gravedad y número de entregas objetivo
+  const planets = [
+    {name:'Nebulón', gravity:0.98, time:60, deliveries:3, obstacles:5},
+    {name:'Pizza Prime', gravity:0.6, time:75, deliveries:4, obstacles:6},
+    {name:'Agujero Q', gravity:1.6, time:50, deliveries:3, obstacles:8}
+  ];
+
+  // Player
+  const ship = {
+    x: 120, y: H/2, vx:0, vy:0, angle:0, speed:0.18, radius:16
+  };
+
+  // Delivery points and obstacles
+  let deliveries = [];
+  let obstacles = [];
+
+  // Input
+  const keys = {};
+  window.addEventListener('keydown', e=>{keys[e.key.toLowerCase()]=true; if(e.key==='p'||e.key==='P') togglePause(); if(e.key==='r'||e.key==='R') initLevel();});
+  window.addEventListener('keyup', e=>{keys[e.key.toLowerCase()]=false;});
+
+  // Resize handler (responsive canvas scale)
+  function resize(){
+    const ratio = Math.min(window.innerWidth - 320 - 40, 1200);
+    canvas.style.width = Math.max(640, ratio) + 'px';
+  }
+  window.addEventListener('resize', resize);
+  resize();
+
+  // Initialize level
+  function initLevel(){
+    const p = planets[state.levelIndex];
+    state.time = p.time;
+    state.delivered = 0;
+    ship.x = 120; ship.y = H/2; ship.vx = 0; ship.vy = 0;
+    deliveries = [];
+    obstacles = [];
+    // create delivery zones
+    for(let i=0;i<p.deliveries;i++){
+      deliveries.push({x: Math.random()*(W-250)+250, y: Math.random()*(H-120)+60, r:20, delivered:false});
+    }
+    // create obstacles
+    for(let i=0;i<p.obstacles;i++){
+      obstacles.push({x: Math.random()*(W-200)+200, y: Math.random()*(H-80)+40, r: 12+Math.random()*18, vx: (Math.random()-0.5)*1.2, vy:(Math.random()-0.5)*1.2});
+    }
+    updateUI();
+  }
+
+  function updateUI(){
+    scoreEl.textContent = state.score;
+    timeEl.textContent = Math.max(0, Math.round(state.time));
+    deliveredEl.textContent = state.delivered + ' / ' + planets[state.levelIndex].deliveries;
+    levelEl.textContent = (state.levelIndex+1) + ' - ' + planets[state.levelIndex].name;
+  }
+
+  // Simple collision helper
+  function dist(a,b){return Math.hypot(a.x-b.x,a.y-b.y)}
+
+  // Game loop
+  let last = performance.now();
+  function loop(now){
+    if(!state.running) return;
+    const dt = Math.min(0.033, (now-last)/1000);
+    last = now;
+    if(!state.paused){
+      update(dt);
+    }
+    draw();
+    requestAnimationFrame(loop);
+  }
+
+  function update(dt){
+    const p = planets[state.levelIndex];
+    // controls
+    let ax = 0, ay = 0;
+    if(keys['arrowup']||keys['w']) ay -= 1;
+    if(keys['arrowdown']||keys['s']) ay += 1;
+    if(keys['arrowleft']||keys['a']) ax -= 1;
+    if(keys['arrowright']||keys['d']) ax += 1;
+    // thrust affects velocity, fuel limited
+    const thrust = 220;
+    const mv = Math.hypot(ax,ay);
+    if(mv>0 && state.fuel>0){
+      ship.vx += (ax/mv)*thrust*dt*ship.speed;
+      ship.vy += (ay/mv)*thrust*dt*ship.speed;
+      state.fuel = Math.max(0, state.fuel - 8*dt);
+    }
+    // gravity effect pulls toward center vertically (simple)
+    ship.vy += (p.gravity-1) * 30 * dt; // gravity anchor
+
+    // apply velocities
+    ship.x += ship.vx * dt * 60;
+    ship.y += ship.vy * dt * 60;
+
+    // dampening
+    ship.vx *= 0.995; ship.vy *= 0.995;
+
+    // clamp to bounds
+    ship.x = Math.max(20, Math.min(W-20, ship.x));
+    ship.y = Math.max(20, Math.min(H-20, ship.y));
+
+    // update obstacles
+    obstacles.forEach(o=>{
+      o.x += o.vx*dt*60; o.y += o.vy*dt*60;
+      // bounce
+      if(o.x<40||o.x>W-40) o.vx *= -1;
+      if(o.y<40||o.y>H-40) o.vy *= -1;
+    });
+
+    // check collisions with obstacles
+    obstacles.forEach(o=>{
+      const d = Math.hypot(o.x-ship.x, o.y-ship.y);
+      if(d < o.r + ship.radius){
+        // hit
+        if(state.shield>0){
+          state.shield = Math.max(0, state.shield - 1);
+          state.score = Math.max(0, state.score - 5);
+        } else {
+          state.score = Math.max(0, state.score - 15);
+          // knockback
+          ship.vx += (ship.x - o.x)/d * 6;
+          ship.vy += (ship.y - o.y)/d * 6;
+        }
+      }
+    });
+
+    // check deliveries proximity
+    deliveries.forEach(d=>{
+      if(!d.delivered){
+        const dx = ship.x - d.x; const dy = ship.y - d.y;
+        if(Math.hypot(dx,dy) < ship.radius + d.r){
+          // show hint: press space to deliver
+          d._near = true;
+        } else d._near = false;
+      }
+    });
+
+    // deliver if space pressed
+    if(keys[' ']){
+      deliveries.forEach(d=>{
+        if(!d.delivered && d._near){
+          d.delivered = true;
+          state.delivered += 1;
+          // reward: time bonus and score depends on speed left
+          const timeBonus = Math.round(state.time*0.3);
+          state.score += 20 + timeBonus;
+          state.time = Math.max(0, state.time - 2); // slight penalty to avoid stalling
+        }
+      });
+      // avoid repeated deliveries in same frame
+      keys[' '] = false;
+    }
+
+    // countdown timer
+    state.time -= dt;
+    if(state.time <= 0){
+      // level failed
+      state.time = 0;
+      handleLevelEnd(false);
+    }
+
+    // win condition
+    if(state.delivered >= planets[state.levelIndex].deliveries){
+      handleLevelEnd(true);
+    }
+
+    updateUI();
+  }
+
+  function handleLevelEnd(success){
+    if(success){
+      state.score += 50; // bonus
+      // advance to next planet or loop
+      state.levelIndex = (state.levelIndex + 1) % planets.length;
+      initLevel();
+    } else {
+      // reset to current level
+      alert('Tiempo agotado. Reiniciando nivel.');
+      initLevel();
+    }
+  }
+
+  function draw(){
+    // clear
+    ctx.clearRect(0,0,W,H);
+    // background stars
+    drawStars();
+
+    // draw delivery zones
+    deliveries.forEach(d=>{
+      ctx.beginPath(); ctx.arc(d.x,d.y,d.r,0,Math.PI*2);
+      ctx.fillStyle = d.delivered ? 'rgba(80,220,100,0.14)' : 'rgba(255,221,80,0.06)'; ctx.fill();
+      ctx.lineWidth = 2; ctx.strokeStyle = d._near ? 'rgba(255,255,255,0.9)' : 'rgba(255,221,80,0.18)'; ctx.stroke();
+      // pizza icon (simple)
+      ctx.fillStyle = 'rgba(255,150,30,0.95)';
+      ctx.fillRect(d.x-6,d.y-4,12,8);
+    });
+
+    // draw obstacles
+    obstacles.forEach(o=>{
+      ctx.beginPath(); ctx.arc(o.x,o.y,o.r,0,Math.PI*2);
+      ctx.fillStyle = 'rgba(200,80,80,0.9)'; ctx.fill();
+      ctx.lineWidth = 2; ctx.strokeStyle = 'rgba(0,0,0,0.6)'; ctx.stroke();
+    });
+
+    // draw ship
+    ctx.save();
+    ctx.translate(ship.x,ship.y);
+    ctx.rotate(Math.atan2(ship.vy, ship.vx) + 0.5);
+    // body
+    ctx.beginPath(); ctx.moveTo(20,0); ctx.lineTo(-12,-12); ctx.lineTo(-6,0); ctx.lineTo(-12,12); ctx.closePath();
+    ctx.fillStyle = '#e6e6e6'; ctx.fill();
+    // pizza box on top
+    ctx.fillStyle = '#ff9f1c'; ctx.fillRect(-8,-8,10,6);
+    // shield indicator
+    if(state.shield>0){
+      ctx.beginPath(); ctx.arc(0,0, ship.radius+6,0,Math.PI*2); ctx.strokeStyle='rgba(100,170,255,0.35)'; ctx.lineWidth=3; ctx.stroke();
+    }
+    ctx.restore();
+
+    // HUD: fuel bar
+    drawFuel();
+  }
+
+  function drawStars(){
+    // subtle parallax stars
+    ctx.fillStyle='rgba(255,255,255,0.02)';
+    ctx.fillRect(0,0,W,H);
+    for(let i=0;i<60;i++){
+      const x = (i*47)%W + (i*13)%20; const y = (i*37)%H + (i*11)%20;
+      ctx.fillStyle = 'rgba(255,255,255,'+ (0.05 + (i%5)*0.02) +')';
+      ctx.fillRect(x,y,1,1);
+    }
+  }
+
+  function drawFuel(){
+    const w = 200; const h = 8; const x = 20; const y = H - 24;
+    ctx.fillStyle = 'rgba(255,255,255,0.06)'; ctx.fillRect(x,y,w,h);
+    ctx.fillStyle = 'rgba(255,160,80,0.9)'; ctx.fillRect(x,y, w * (state.fuel/100), h);
+    ctx.lineWidth = 1; ctx.strokeStyle = 'rgba(0,0,0,0.4)'; ctx.strokeRect(x,y,w,h);
+    ctx.fillStyle = 'rgba(255,255,255,0.6)'; ctx.font='12px Inter, Arial'; ctx.fillText('Combustible', x, y-6);
+  }
+
+  function togglePause(){ state.paused = !state.paused; if(state.paused) alert('Pausado'); }
+
+  // Shop buttons (simple)
+  buyFuelBtn.addEventListener('click', ()=>{
+    if(state.score >= 10){ state.score -= 10; state.fuel = Math.min(100, state.fuel + 40); updateUI(); }
+    else alert('Puntos insuficientes');
+  });
+  buyShieldBtn.addEventListener('click', ()=>{
+    if(state.score >= 20){ state.score -= 20; state.shield += 1; updateUI(); }
+    else alert('Puntos insuficientes');
+  });
+
+  // Start
+  initLevel();
+  requestAnimationFrame(loop);
+
+  // Expose for debugging in console
+  window._PG = {state, ship, deliveries, obstacles, planets, initLevel};
+  </script>
+</body>
+</html>
